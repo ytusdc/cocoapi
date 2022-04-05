@@ -441,8 +441,8 @@ class COCOeval:
                     if len(E) == 0:
                         continue
 
-                    # 特定类别、特定aRng的所有图片中，每一张图片的maxDet个预测框得分,即
-                    # k0，a0，maxdet下所有Images得分的索引 inds
+                    # 特定类别、特定aRng下，所有图片中，每一张图片的(最多)maxDet个预测框得分,concatenate
+                    # k0，a0，maxdet下所有Images得分
                     dtScores = np.concatenate([e['dtScores'][0:maxDet] for e in E])
 
                     # different sorting method generates slightly different results.
@@ -455,8 +455,11 @@ class COCOeval:
                     dtScoresSorted = dtScores[inds]
 
                     # dtm、dtIg维度是(T,maxDet个数*图片个数)
-                    # 在当前k0,a0下，每张图片不超过MaxDet的所有det按照ind排序。 dtm[T,sum(Det) in every imges]
+                    # 在当前k0,a0下，每张图片不超过MaxDet的所有det按照ind排序。 dtm
+
+                    # 和dtScoresSorted对应的dtm
                     dtm  = np.concatenate([e['dtMatches'][:,0:maxDet] for e in E], axis=1)[:,inds]
+                    # 和dtScoresSorted对应的dtig
                     dtIg = np.concatenate([e['dtIgnore'][:,0:maxDet]  for e in E], axis=1)[:,inds]
                     gtIg = np.concatenate([e['gtIgnore'] for e in E])   # gtIg维度是(图片个数，G)
                     npig = np.count_nonzero(gtIg==0 )       # gt不ignore的个数
@@ -464,13 +467,14 @@ class COCOeval:
                     if npig == 0:
                         continue
 
-                    # 如果dtm对应的匹配gt不为0，且对应的gt没有被忽略，这个dt就是TP
+                    # 如果dtm对应的匹配gt不为0，且对应的gt没有被忽略，表示匹配正确，这个dt就是TP
                     tps = np.logical_and(               dtm,  np.logical_not(dtIg) )
 
-                    # dtm对应的gt为0， 并且这个dt也没有被忽略，这个dt就是FP
+                    # dtm对应的gt为0（表示没有匹配到），并且这个dt也没有被忽略，这个dt就是FP
                     fps = np.logical_and(np.logical_not(dtm), np.logical_not(dtIg) )
 
-                    # 按照行的方式（每个Iou阈值下）进行匹配到的累加 每个index也就是到这个置信度的时候有多少个tp，有多少个fp
+                    # 按照行的方式（每个Iou阈值下）进行匹配到的累加
+                    # 每个index也就是到这个置信度的时候有多少个tp，有多少个fp
                     tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
                     fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
 
