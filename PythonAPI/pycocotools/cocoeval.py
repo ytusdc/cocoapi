@@ -401,6 +401,8 @@ class COCOeval:
         K           = len(p.catIds) if p.useCats else 1  # 多少个类
         A           = len(p.areaRng)   # 多少个面积阈值
         M           = len(p.maxDets)   # 多少个最大检测数
+
+        # precision 是存储不同的rec值下的p值，相当于存储了pr曲线的采样点
         precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
         recall      = -np.ones((T,K,A,M))
         scores      = -np.ones((T,R,K,A,M))
