@@ -87,8 +87,8 @@ class COCOeval:
         Prepare ._gts and ._dts for evaluation based on params
         :return: None
 
-        在目标检测中 _.gts 索引Ann的index为 [图片ip， 类别ip]，得到的是一个list数组，如果一张图片的一个类别有多个bbox，
-        那么list中将会有多个item. _.dts同理
+        在目标检测中 self._gts,是一个字典，索引可以是元祖 [图片ip， 类别ip]，得到的是一个list数组，如果一张图片的一个类别有多个bbox，
+        那么list中将会有多个item. self._dts同理
         '''
         def _toMask(anns, coco):
             # modify ann['segmentation'] by reference
@@ -143,7 +143,7 @@ class COCOeval:
         print('Evaluate annotation type *{}*'.format(p.iouType))
         p.imgIds = list(np.unique(p.imgIds))  # 去重，得到唯一imgid
         if p.useCats:
-            p.catIds = list(np.unique(p.catIds)) # 去重，得到唯一gt类别id，不包括背景
+            p.catIds = list(np.unique(p.catIds))  # 去重，得到唯一gt类别id，不包括背景
         p.maxDets = sorted(p.maxDets)
         self.params=p
 
