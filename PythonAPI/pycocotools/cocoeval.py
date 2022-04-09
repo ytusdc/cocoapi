@@ -87,7 +87,7 @@ class COCOeval:
         Prepare ._gts and ._dts for evaluation based on params
         :return: None
 
-        在目标检测中 self._gts,是一个字典，索引可以是元祖 [图片ip， 类别ip]，得到的是一个list数组，如果一张图片的一个类别有多个bbox，
+        在目标检测中 self._gts,是一个字典，索引key是元祖 [图片ip， 类别ip]，得到的value是一个list数组，如果一张图片的一个类别有多个bbox，
         那么list中将会有多个item. self._dts同理
         '''
         def _toMask(anns, coco):
@@ -115,12 +115,12 @@ class COCOeval:
             if p.iouType == 'keypoints':
                 gt['ignore'] = (gt['num_keypoints'] == 0) or gt['ignore']
 
-        # 这种声明方式产生的self._gts是一个字典，字典的key是元祖(imgeid, catid), 字典的每个元素(value) 是列表
-        # 这样得到的就是相同的img_id和类别id的信息，存放在一个列表中，即一张图像的同一个类别的所有框在一个列表中；
+        # self._gts是一个字典，字典的key是元祖(imgeid, catid), 字典的每个key对应的元素 value 是列表
+        # 这样相同的img_id和类别id的信息，存放在一个列表中，即每张图片，每个类别的所有框bbox存放在一个value列表中；
         self._gts = defaultdict(list)       # gt for evaluation
         self._dts = defaultdict(list)       # dt for evaluation
         # 给_gts字典对应的(imgeid, catid)， 添加对应的bbox信息
-        # 得到的是每张图片，每个类别的检测结果的集合。
+        # 得到的是每张图片，每个类别的所有 bbox 的 list。
         for gt in gts:
             self._gts[gt['image_id'], gt['category_id']].append(gt)
         for dt in dts:
@@ -151,7 +151,7 @@ class COCOeval:
         # loop through images, area range, max detection number
         catIds = p.catIds if p.useCats else [-1]
 
-        # 根据检测人物选择 computeIoU 函数，这里可以自定义 computeIoU
+        # 根据检测任务选择 computeIoU 函数，这里可以自定义 computeIoU
         if p.iouType == 'segm' or p.iouType == 'bbox':
             computeIoU = self.computeIoU
         elif p.iouType == 'keypoints':
@@ -191,12 +191,12 @@ class COCOeval:
             dt = [_ for cId in p.catIds for _ in self._dts[imgId,cId]]
         if len(gt) == 0 and len(dt) ==0:
             return []
-        # 按照网络预测的置信度score排序， inds是score从大到小排列的索引
+        # dt按置信度score从大到小排序， inds是score从大到小排列的索引
         inds = np.argsort([-d['score'] for d in dt], kind='mergesort')
         dt = [dt[i] for i in inds]
 
-        # 将此处的dt按置信度从大到小排列
-        # 其中，如果dt大于100个检测框的，按置信度取前100个(100个由p.maxDets设定)
+        # 把超出最大检测结果p.maxDets[-1]的bbox剔除
+        # 如果dt大于100个检测框的，按置信度取前100个(100个由p.maxDets[-1]设定)
         # 注意是一张图片一种类别的预测框不超过p.maxDets[-1]个，而不是一张图片的预测框不超过这么多，
         # 除非设置忽视类别，那就等价于一张图片的总的预测框不多于p.maxDets[-1]，因为本函数计算的是一张图片一个类别
         if len(dt) > p.maxDets[-1]:
@@ -277,7 +277,7 @@ class COCOeval:
             return None
 
         for g in gt:
-            # 如果 gt 不符合特定面积的阈值，就忽略，设置ignore
+            # 如果 gt 不符合特定面积的阈值，就忽略，或者gt本身就是ignore的， 设置_ignore
             if g['ignore'] or (g['area']<aRng[0] or g['area']>aRng[1]):
                 g['_ignore'] = 1  # 忽略的值为 1
             else:
@@ -289,38 +289,43 @@ class COCOeval:
         gtind = np.argsort([g['_ignore'] for g in gt], kind='mergesort')
         gt = [gt[i] for i in gtind]   # 得到按ignore 排序后的 gt
 
-        # 按score 从大到小排序，挑出满足这个最大检测个数maxDet下的所有dt
+        # dt按score 从大到小排序，挑出满足这个最大检测个数maxDet下的所有dt
         dtind = np.argsort([-d['score'] for d in dt], kind='mergesort')
         dt = [dt[i] for i in dtind[0:maxDet]]
         iscrowd = [int(o['iscrowd']) for o in gt]
         # load computed ious
 
-        # 一张图片中，一种类别的gt存在，按gtind取gt与所有dt的iou结果
+        # self.ious 是一个(M,N)的矩阵，预测框dt(M个)，gt(N个)
+        # 该行作用是如果一张图片中，一种类别的gt存在，按gtind取gt与所有dt的iou结果
+        # 得到的结果 ious 依然是(M,N)的矩阵， 只是在列(N)上，是按gtind排过序的，
+        # 而且 列(N) 是可以 和 gt(按gtind排过序) 对应上的
         ious = self.ious[imgId, catId][:, gtind] if len(self.ious[imgId, catId]) > 0 else self.ious[imgId, catId]
 
-        T = len(p.iouThrs)  # 设置最后的阈值卡关
+        T = len(p.iouThrs)  # 设置的阈值数量
         G = len(gt)         # 总的gt数量，包括要忽略的
         D = len(dt)         # 总的dt数量
 
         # 在每个阈值下的gt是否得到匹配
-        # 存储的是每一个iou阈值下的gt能够匹配到的最大iou对应的模型预测框dt(最多p.maxDet[-1]个)的id，匹配不到的值是0；
-        # gtm存储的是匹配成功的那个gt对应的dt所对应的id,
+        # gtm存储的是匹配成功的那个gt对应的dt所对应的id
+        # 即存储的是每一个iou阈值下的gt能够匹配到的最大iou对应的预测框dt的id，匹配不到的值是0；
         gtm  = np.zeros((T,G))
 
         # 在每个阈值下的Dt是否得到匹配
-        # 存储的是每一个iou阈值下的模型预测框dt匹配到的gt的id，匹配不到的是0；
+        # dtm存储的是每一个iou阈值下的预测框dt匹配到的gt的id，匹配不到的是0；
         dtm  = np.zeros((T,D))
 
-        gtIg = np.array([g['_ignore'] for g in gt])  # 所有忽略的gt
-        # 所有忽略的dt，表示每一个阈值下的预测框dt匹配到的gt是否需要ignore
+        # gtIg 存储的是所有gt忽略属性，因为gt已经根据_ignore排过序了，
+        # 所以 gtIg 前面都是 0 (不忽略)， 后面都是 1 (忽略)
+        gtIg = np.array([g['_ignore'] for g in gt])
+        # 所有忽略的dt，dtIg 表示每一个阈值下的预测框dt匹配到的gt是否需要ignore
         dtIg = np.zeros((T,D))
 
         # dt已经按照置信度排过序，gt已经按照ignore排过位置，非ignore在前，ignore在后面
         # 下面的if里面实现的功能是每一个iou阈值下，遍历预测框(预测框已经按置信度从大到小排序)，如果一个预测框dt和gt匹配上，
         # 则另一个预测框不能再通过iou和这个gt进行匹配
-        if not len(ious)==0:    # 如果这张图片存在这个类别的gt与dt， 此时的ious仅仅是 不忽略的那些gt对应的样本
+        if not len(ious)==0:    # 如果这张图片存在这个类别的gt与dt
             for tind, t in enumerate(p.iouThrs):  # tind, t 是 IoU index，IoU阈值
-                # dt按照置信度大小排序好的前 max_Det个d
+                # dt按照置信度大小排序好的前 max_Det个检测框
                 for dind, d in enumerate(dt):
                     # information about best match so far (m=-1 -> unmatched)
                     iou = min([t,1-1e-10])
@@ -328,15 +333,14 @@ class COCOeval:
                     m   = -1
                     for gind, g in enumerate(gt):  #  在gt和dt之间进行遍历
                         # if this gt already matched, and not a crowd, continue
-                        # 如果该阈值下的这个gt已经被其他置信度更好的dt匹配到了，本轮的dt就不能匹配这个gt了，直接下个gt计算是否匹配
+                        # 如果该阈值下的这个gt已经被其他置信度更好(上一个for循环)的dt匹配到了，
+                        # 本轮的dt就不能匹配这个gt了，直接下个gt计算是否匹配
                         if gtm[tind,gind]>0 and not iscrowd[gind]:
                             continue
                         # if dt matched to reg gt, and on ignore gt, stop
                         # 因为gt已经按照ignore排好序了，前面的为0，后面的为1. 于是当我们碰到第一个gt的ignore为1时(gtIg[gind]==1)，
-                        # 判断这个dt是否已经匹配到了其他的gt，因为gind之后的都被ignore了
-                        # 如果m>-1，并且m对应的gt没有被ignore（gtIg[m]==0），就直接结束即可，对应的就是这个dt匹配最好的gt
-                        # 跳出循环条件？等待已经匹配成功，m此时一定是正数，并且匹配的这个不是ignore,
-                        # 并且下一个就是ignore，这样才跳出循环，这样保证会一直寻找最优的配置
+                        # 判断这个dt是否已经匹配到了其他的gt，因为该gind之后的都被ignore了
+                        # 如果m>-1，并且m对应的gt没有被ignore(gtIg[m]==0)，就直接结束即可，对应的就是这个dt匹配最好的gt
                         if m>-1 and gtIg[m]==0 and gtIg[gind]==1:
                             break
                         # continue to next gt unless better match made
@@ -344,7 +348,7 @@ class COCOeval:
                         if ious[dind,gind] < iou:
                             continue
                         # if match successful and best so far, store appropriately
-                        # 此时表示匹配成功了，超过当前最佳的IoU， m存储的是匹配成功的gtind，
+                        # 此时表示匹配成功了，超过当前最佳的IoU， m存储的是dt匹配成功gt的gtind，
                         # 先更新IoU与m的值，但是还是会继续，是为了找到更好的匹配者
                         iou=ious[dind,gind]
                         m=gind
@@ -359,12 +363,15 @@ class COCOeval:
                     # 对应的能匹配上gt的预测框是否需要ignore，
                     # 如果这个dt对应的最佳gt本身就是被ignore的，就把这个dt也设置为ignore
                     dtIg[tind,dind] = gtIg[m]        # dind对应的那个gt是不是ignore
+
                     dtm[tind,dind]  = gt[m]['id']    # dt匹配上的gt的id
                     gtm[tind,m]     = d['id']        # gt中的框匹配上的预测框dt的id，也就是本次dind对应的id
+
+        # 有哪些dt需要ignore呢？首先匹配上的框本身即是ignore的，即上面的操作
+        # 上面的操作中没有计算aRng范围, 因此匹配到gt的预测框dt， 但是dt在aRng范围外正常计算，不ignore
+
         # set unmatched detections outside of area range to ignore
         # dtm中没有匹配到gt的预测框，同时预测框的area在指定的aRng范围外的，则设置dtIg中对应的预测框为ignore
-        # 有哪些dt需要ignore呢？首先匹配上的框本身即是ignore的，另外没有匹配到的在面积范围之外的也要ignore
-        # 匹配到gt的预测框dt， 但是dt在aRng范围外正常计算，不ignore
         a = np.array([d['area']<aRng[0] or d['area']>aRng[1] for d in dt]).reshape((1, len(dt)))
         dtIg = np.logical_or(dtIg, np.logical_and(dtm==0, np.repeat(a,T,0)))
         # store results for given image and category
@@ -432,70 +439,73 @@ class COCOeval:
         '''
         # retrieve E at each category, area range, and max number of detections
         for k, k0 in enumerate(k_list):      # 类别的索引下标遍历
-            Nk = k0*A0*I0                    # 当前K0前面过了多少图片与面积阈值
+            Nk = k0*A0*I0                    # 当前k0前面过了多少图片与面积阈值
             for a, a0 in enumerate(a_list):  # aRng的遍历
-                Na = a0*I0                   # 在当前K0前面过了多少阈值
-                for m, maxDet in enumerate(m_list):
-                    E = [self.evalImgs[Nk + Na + i] for i in i_list]  # k0，a0下的所有Images(i_list)
+                Na = a0*I0                   # 在当前a0前面过了多少图片
+                for m, maxDet in enumerate(m_list):  # 当前 k0，a0下取不同的maxDet计算
+                    E = [self.evalImgs[Nk + Na + i] for i in i_list]  # 当前 k0，a0下，遍历的所有Images(i_list)
                     E = [e for e in E if not e is None]  # 等价于  if e is not None
                     if len(E) == 0:
                         continue
 
                     # 特定类别、特定aRng下，所有图片中，每一张图片的(最多)maxDet个预测框得分,concatenate
+                    # 每张图片是特定类别(k0确定)、aRng(a0确定)取置信度从大到小的maxDet个框
                     # k0，a0，maxdet下所有Images得分
                     dtScores = np.concatenate([e['dtScores'][0:maxDet] for e in E])
 
                     # different sorting method generates slightly different results.
                     # mergesort is used to be consistent as Matlab implementation.
 
-                    # 是将特定类别，特定aRng的所有图片的预测框
-                    # (每张图片特定类别、aRng取置信度从大到小的maxDet个框)
-                    # 按照得分从高到低排序
+                    # 是将特定类别，特定aRng的所有图片的预测框所有预测框，重新按照得分从高到低排序
                     inds = np.argsort(-dtScores, kind='mergesort')
                     dtScoresSorted = dtScores[inds]
 
-                    # dtm、dtIg维度是(T,maxDet个数*图片个数)
-                    # 在当前k0,a0下，每张图片不超过MaxDet的所有det按照ind排序。 dtm
+                    # 此处的dtm、dtIg维度是(T,maxDet个数*图片个数)
+                    # 在当前k0,a0下，每张图片不超过MaxDet的所有det按照ind排序
 
                     # 和dtScoresSorted对应的dtm
                     dtm  = np.concatenate([e['dtMatches'][:,0:maxDet] for e in E], axis=1)[:,inds]
                     # 和dtScoresSorted对应的dtig
                     dtIg = np.concatenate([e['dtIgnore'][:,0:maxDet]  for e in E], axis=1)[:,inds]
-                    gtIg = np.concatenate([e['gtIgnore'] for e in E])   # gtIg维度是(图片个数，G)
+                    gtIg = np.concatenate([e['gtIgnore'] for e in E])
                     npig = np.count_nonzero(gtIg==0 )       # gt不ignore的个数
-                    # 有多少个正样本
+                    # 整个测试集中有多少个正样本
                     if npig == 0:
                         continue
 
-                    # 如果dtm对应的匹配gt不为0，且对应的gt没有被忽略，表示匹配正确，这个dt就是TP
+                    # dtm,dtig 都是按得分排过序的， 所以得到的 tps,fps 的每个位置也是按照得分排序的
+                    # 如果dtm对应的匹配gt不为0(表示匹配成功)，且对应的gt没有被忽略，表示匹配正确，这个dt就是TP
                     tps = np.logical_and(               dtm,  np.logical_not(dtIg) )
 
                     # dtm对应的gt为0（表示没有匹配到），并且这个dt也没有被忽略，这个dt就是FP
                     fps = np.logical_and(np.logical_not(dtm), np.logical_not(dtIg) )
 
+                    # tp_sum，每个阈值条件下的统计和
                     # 按照行的方式（每个Iou阈值下）进行匹配到的累加
                     # 每个index也就是到这个置信度的时候有多少个tp，有多少个fp
                     tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
                     fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
 
                     # 遍历所有的tp和fp样本
+                    # t 是取iou阈值的index
                     for t, (tp, fp) in enumerate(zip(tp_sum, fp_sum)):
                         tp = np.array(tp)  # 得到这个Iou下对应的tp
                         fp = np.array(fp)  # 得到这个IoU下对应的fp
                         nd = len(tp)       # 有多少个tp
-                        rc = tp / npig     # 每个置信度分数下对应的recall
-                        pr = tp / (fp+tp+np.spacing(1))  #每个阶段对应的精度precision
+                        rc = tp / npig     # 每个置信度分数下对应的recall, 即前n个检测结果对应的recall
+                        pr = tp / (fp+tp+np.spacing(1))  #每个阶段对应的精度precision,即前n个检测结果对应的precision
                         q  = np.zeros((R,))  # 特定召回率下的precision值(pr曲线)
                         ss = np.zeros((R,))  # 特定召回率下的对应的bbox的置信度
 
                         if nd:
-                            recall[t,k,a,m] = rc[-1]  #     recall的话取最后一个
+                            recall[t,k,a,m] = rc[-1]  # recall的话取最后一个，即当前阈值下得到的所有检测结果对应的recall
                         else:
                             recall[t,k,a,m] = 0
 
                         # numpy is slow without cython optimization for accessing elements
                         # use python array gets significant speed improvement
-                        pr = pr.tolist(); q = q.tolist()
+                        pr = pr.tolist()
+                        q = q.tolist()
 
                         # 当前i下的最大精度
                         for i in range(nd-1, 0, -1):
@@ -548,7 +558,7 @@ class COCOeval:
                 # IoU
                 # 得到特定IoU下的所有pr
                 if iouThr is not None:
-                    t = np.where(iouThr == p.iouThrs)[0]  # 找到对应的threshold的得分，如果在输入参数里面制定了阈值范围
+                    t = np.where(iouThr == p.iouThrs)[0]  # 找到对应的threshold的得分
                     s = s[t]
                 s = s[:,:,:,aind,mind]
             else:
