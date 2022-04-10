@@ -413,6 +413,7 @@ class COCOeval:
         precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
         recall      = -np.ones((T,K,A,M))
         scores      = -np.ones((T,R,K,A,M))
+        precision_s = -np.ones((T, K, A, M))  ##真实的精确率值
 
         # create dictionary for future indexing
         _pe = self._paramsEval
@@ -498,7 +499,8 @@ class COCOeval:
                         ss = np.zeros((R,))  # 特定召回率下的对应的bbox的置信度
 
                         if nd:
-                            recall[t,k,a,m] = rc[-1]  # recall的话取最后一个，即当前阈值下得到的所有检测结果对应的recall
+                            # recall 取最后一个，即当前阈值下得到的所有检测结果对应的recall
+                            recall[t,k,a,m] = rc[-1]
                         else:
                             recall[t,k,a,m] = 0
 
