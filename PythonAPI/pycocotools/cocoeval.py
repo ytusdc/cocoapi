@@ -501,8 +501,11 @@ class COCOeval:
                         if nd:
                             # recall 取最后一个，即当前阈值下得到的所有检测结果对应的recall
                             recall[t,k,a,m] = rc[-1]
+                            # 取 pr[-1]， 即当前阈值下，条件(k,a,m)下，得到的所有检测结果对应的 precision_s
+                            precision_s[t, k, a, m] = pr[-1]
                         else:
                             recall[t,k,a,m] = 0
+                            precision_s[t, k, a, m] = 0
 
                         # numpy is slow without cython optimization for accessing elements
                         # use python array gets significant speed improvement
@@ -532,6 +535,7 @@ class COCOeval:
             'precision': precision,
             'recall':   recall,
             'scores': scores,
+            'precision_s': precision_s,
         }
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format( toc-tic))
@@ -541,11 +545,19 @@ class COCOeval:
         Compute and display summary metrics for evaluation results.
         Note this functin can *only* be applied on the default parameter setting
         '''
-        def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
+        def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100, catId=self.params.catIds):
+            '''
+            precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
+              这个是存储不同的rec值下的p值，相当于存储了pr曲线的采样点
+            recall      = -np.ones((T,K,A,M))
+            precision_s = -np.ones((T,K,A,M))   # 真实的精确率值
+            '''
+
+
             p = self.params
             iStr = ' {:<18} {} @[ IoU={:<9} | area={:>6s} | maxDets={:>3d} ] = {:0.3f}'
-            titleStr = 'Average Precision' if ap == 1 else 'Average Recall'
-            typeStr = '(AP)' if ap==1 else '(AR)'
+            # titleStr = 'Average Precision' if ap == 1 else 'Average Recall'
+            # typeStr = '(AP)' if ap==1 else '(AR)'
             iouStr = '{:0.2f}:{:0.2f}'.format(p.iouThrs[0], p.iouThrs[-1]) \
                 if iouThr is None else '{:0.2f}'.format(iouThr)
 
@@ -553,24 +565,46 @@ class COCOeval:
             aind = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng]
             mind = [i for i, mDet in enumerate(p.maxDets) if mDet == maxDets]
 
+            # 特定类别的 cind, 如果 catId=self.params.catIds，则表示取所有的类别
+            cind = [i for i, cat in enumerate(p.catIds) if cat in catId]
+
             # 如果是ap，就从precision中得到对应面积阈值、最大检测数下的精度
             if ap == 1:
+                titleStr = 'Average P-R curve Area'
+                typeStr = '(mAP)'
                 # dimension of precision: [TxRxKxAxM]
                 s = self.eval['precision']
                 # IoU
-                # 得到特定IoU下的所有pr
+                # 得到特定IoU下的所有类别的所有pr
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]  # 找到对应的threshold的得分
                     s = s[t]
                 s = s[:,:,:,aind,mind]
-            else:
+                # s = s[:, :, cind, aind, mind]
+            elif ap == 0:
+                titleStr = 'Average Recall'
+                typeStr = '(AR)'
                 # 如果是recall，就取出recall的值
                 # dimension of recall: [TxKxAxM]
                 s = self.eval['recall']
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
                     s = s[t]
-                s = s[:,:,aind,mind]
+                # s = s[:,:,aind,mind]
+                s = s[:, cind, aind, mind]
+            else:
+                titleStr = 'Average Precision'
+                typeStr = '(AP)'
+                # dimension of precision: [TxKxAxM]
+                s = self.eval['precision_s']
+                # IoU
+                if iouThr is not None:
+                    t = np.where(iouThr == p.iouThrs)[0]
+                    s = s[t]
+                # 特定阈值，特定类别(cind),特定面积(aind)，特定maxDets的精确度
+                # s = s[:, cind, aind, mind]
+
+
             if len(s[s>-1])==0:
                 mean_s = -1
             else:
@@ -595,17 +629,56 @@ class COCOeval:
             stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
             return stats
         def _summarizeKps():
-            stats = np.zeros((10,))
-            stats[0] = _summarize(1, maxDets=20)
-            stats[1] = _summarize(1, maxDets=20, iouThr=.5)
-            stats[2] = _summarize(1, maxDets=20, iouThr=.75)
-            stats[3] = _summarize(1, maxDets=20, areaRng='medium')
-            stats[4] = _summarize(1, maxDets=20, areaRng='large')
-            stats[5] = _summarize(0, maxDets=20)
-            stats[6] = _summarize(0, maxDets=20, iouThr=.5)
-            stats[7] = _summarize(0, maxDets=20, iouThr=.75)
-            stats[8] = _summarize(0, maxDets=20, areaRng='medium')
-            stats[9] = _summarize(0, maxDets=20, areaRng='large')
+            # stats = np.zeros((10,))
+            # stats[0] = _summarize(1, maxDets=20)
+            # stats[1] = _summarize(1, maxDets=20, iouThr=.5)
+            # stats[2] = _summarize(1, maxDets=20, iouThr=.75)
+            # stats[3] = _summarize(1, maxDets=20, areaRng='medium')
+            # stats[4] = _summarize(1, maxDets=20, areaRng='large')
+            # stats[5] = _summarize(0, maxDets=20)
+            # stats[6] = _summarize(0, maxDets=20, iouThr=.5)
+            # stats[7] = _summarize(0, maxDets=20, iouThr=.75)
+            # stats[8] = _summarize(0, maxDets=20, areaRng='medium')
+            # stats[9] = _summarize(0, maxDets=20, areaRng='large')
+
+            stats = np.zeros((31,))
+            stats[0] = _summarize(1)
+            stats[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[2])
+            stats[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[2])
+            stats[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[2])
+            stats[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[2])
+            stats[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
+            stats[6] = _summarize(0, iouThr=.5, maxDets=self.params.maxDets[1])
+            stats[7] = _summarize(0, maxDets=self.params.maxDets[1])
+            stats[8] = _summarize(0, maxDets=self.params.maxDets[2])
+            # stats[8] = _summarize(0, iouThr=.5, maxDets=self.params.maxDets[0])
+            stats[9] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
+            stats[10] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
+            stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
+
+            stats[12] = _summarize(2, maxDets=self.params.maxDets[0])
+            stats[13] = _summarize(2, maxDets=self.params.maxDets[1])
+            stats[14] = _summarize(2, maxDets=self.params.maxDets[2])
+            stats[15] = _summarize(2, iouThr=.5, maxDets=self.params.maxDets[0])
+            stats[16] = _summarize(2, iouThr=.5, maxDets=self.params.maxDets[1])
+            stats[17] = _summarize(2, iouThr=.75, maxDets=self.params.maxDets[0])
+            stats[18] = _summarize(2, iouThr=.75, maxDets=self.params.maxDets[1])
+
+            stats[19] = _summarize(2, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[0]])
+            stats[20] = _summarize(2, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[1]])
+            # stats[21] = _summarize(2, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[2]])
+
+            stats[22] = _summarize(0, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[0]])
+            stats[23] = _summarize(0, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[1]])
+            # stats[24] = _summarize(0, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[2]])
+
+            stats[25] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[0]])
+            stats[26] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[1]])
+
+            stats[27] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[0]])
+            stats[28] = _summarize(2, iouThr=.75, maxDets=self.params.maxDets[1], catId=[self.params.catIds[0]])
+
+
             return stats
         if not self.eval:
             raise Exception('Please run accumulate() first')
