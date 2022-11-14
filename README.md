@@ -1,4 +1,5 @@
-COCO API - http://cocodataset.org/
+## COCO API - http://cocodataset.org/
+# 当前分支在官方 cocoapi 基础上做了优化
 
 说明：官方的cocoapi计算的mAP是IOU从0.5到0.95，每隔0.05下计算的所有类别的AP的平均值；
 具体计算过程时是：
@@ -31,11 +32,15 @@ AR平均召回率，mAP：pr曲线围成的面积；
 输出指定类别CatID、指定aRng(small、medium、large)、指定maxDets(每张图每个类别的最多检测框个数)、指定IOUthr下的三个指标值；
 
 新增功能3：这个功能还没完善，有机会完善
-https://blog.csdn.net/yshtjdx/article/details/111238546?spm=1001.2014.3001.5502
 除此之外，为了根据模型预测结果分析得到针对性的模型优化方向，可以根据指定条件（CatID、aRng、maxDets、IOUthr）
 计算测试集中哪些样本按照指定条件完全检出，并将这些样本名称保存在good_predict.txt文件中，
 同时将存在漏检或错检的bbox的样本名称和检测结果分别保存在leak_det_predict.txt和leak_det_predict.json中，
 这样就便于进一步分析模型在哪些测试集样本上表现不佳以及表现不佳的原因，进而可以使用离线数据增强或者其他技术对模型进行针对性优化(新增功能3)！！！
+
+参考链接：
+1. https://blog.csdn.net/yshtjdx/article/details/111238546?spm=1001.2014.3001.5502
+2. https://blog.csdn.net/qq_36302589/article/details/105690491
+3. https://zhuanlan.zhihu.com/p/135355550
 
 
 
