@@ -468,6 +468,9 @@ class COCOeval:
             ]
         '''
         # retrieve E at each category, area range, and max number of detections
+        '''
+        这个嵌套循环作用是：对于指定的COCO类别，拿到所有预测框属于该类别的图片
+        '''
         # self.evalImgs 索引顺序是 K,A,M,I 所以找到在特定K，A，M下的所有图片，需要按照如下的三维索引
         for k, k0 in enumerate(k_list):      # 类别的索引下标遍历
             Nk = k0*A0*I0                    # 当前k0前面过了多少图片与面积阈值
@@ -475,8 +478,10 @@ class COCOeval:
                 Na = a0*I0                   # 在当前a0前面过了多少图片
                 for m, maxDet in enumerate(m_list):  # 当前 k0，a0下取不同的maxDet计算
                     # 由于evalImgs的存放顺序是：按照K，A，I（imgId）
-                    # E相当于取出了所有Image在当前k0，当前a0下的evaluate结果
+                    # E 代表指定类别(k0)、检测面积范围(a0)、最大检测数(maxDet)条件下，所有图片的预测框结果（evaluate结果）
                     E = [self.evalImgs[Nk + Na + i] for i in i_list]  # 当前 k0，a0下，遍历的所有Images(i_list)
+
+                    # 如果在该指定条件下图片结果为空，则排除掉
                     E = [e for e in E if not e is None]  # 等价于  if e is not None
                     if len(E) == 0:
                         continue
@@ -499,12 +504,12 @@ class COCOeval:
 
 
                     '''
+                    将所有结果预测框匹配、预测框符合条件情况、真实框符合条件情况连接起来
                     此处的dtm、dtIg维度是(T,maxDet个数*图片个数)
                     将dt的匹配结果按照score的顺序inds取出。
                     dtm有两个维度。第一个维度为T，代表不同阈值；第二个维度才是匹配结果
                     最后也是将所有图片的结果拼接到一起
                     '''
-
                     # 在当前k0,a0下，每张图片不超过MaxDet的所有det按照ind排序。 dtm[T,sum(Det) in every imges]
                     # 和dtScoresSorted对应的dtm
                     dtm  = np.concatenate([e['dtMatches'][:,0:maxDet] for e in E], axis=1)[:,inds]
@@ -517,6 +522,7 @@ class COCOeval:
                     if npig == 0:
                         continue
 
+                    # tps和fps，数组中的每一项代表该预测框是否预测准确
                     # dtm,dtIg 都是按得分排过序的， 所以得到的 tps,fps 的每个位置也是按照得分排序的
                     # 如果dtm对应的匹配gt不为0(表示匹配成功)，且对应的gt没有被忽略，表示匹配正确，这个dt就是TP tips:[1,0,1,0,1,0]
                     tps = np.logical_and(               dtm,  np.logical_not(dtIg) )
@@ -578,9 +584,9 @@ class COCOeval:
             'params': p,
             'counts': [T, R, K, A, M],
             'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'precision': precision,
-            'recall':   recall,
-            'scores': scores,
+            'precision': precision,  # 设定的101个召回率梯度所对应的精度（用于计算所有类平均精度mAp）
+            'recall':   recall,  # 样本数从少到多对应的召回率
+            'scores': scores,  # 设定的101个召回率梯度所对应的分数
         }
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format( toc-tic))
